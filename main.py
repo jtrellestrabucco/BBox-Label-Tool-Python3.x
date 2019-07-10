@@ -16,7 +16,7 @@ from tkinter.messagebox import showerror
 import os
 import glob
 import random
-from os.path import exists, join
+from os.path import exists, join, isdir
 
 # colors for the bboxes
 COLORS = ['red', 'blue', 'yellow', 'pink', 'cyan', 'green', 'black']
@@ -68,9 +68,22 @@ class LabelTool():
         content = StringVar()
         self.folder_path_entry = Entry(self.frame, textvariable=content)
         self.folder_path_entry.grid(row = 0, column = 1, columnspan=3, sticky = W+E)
-        content.set('/Users/jtrabucco/Documents/Projects/datasets/Scene_1/train/')
-        self.ldBtn = Button(self.frame, text = "Load", command = self.loadDir)
+        content.set('/Users/jtrabucco/Documents/Projects/datasets')
+        self.ldBtn = Button(self.frame, text = "Load Scenes", command = self.loadDir)
         self.ldBtn.grid(row = 0, column = 4, sticky = W+E)
+
+        self.sel_scene = StringVar()
+        self.scene_label = Label(self.frame, text="Scene:")
+        self.scene_label.grid(row = 1, column = 0, sticky = E)
+        self.scene_ddl = OptionMenu(self.frame, self.sel_scene, "")
+        self.scene_ddl.grid(row=1, column=1)
+
+        self.sel_subdir = StringVar()
+        self.subdir_label = Label(self.frame, text="Folder:")
+        self.subdir_label.grid(row=1, column=2, sticky=E)
+
+        self.ld_data_btn = Button(self.frame, text = "Load Data", command = self.load_data)
+        self.ld_data_btn.grid(row = 1, column = 4, sticky = W+E)
 
         # main panel for labeling
         #self.mainPanel = Canvas(self.frame, cursor='tcross')
@@ -81,14 +94,14 @@ class LabelTool():
         #self.parent.bind("s", self.cancelBBox)
         self.parent.bind("a", self.prevImage) # press 'a' to go backforward
         self.parent.bind("d", self.nextImage) # press 'd' to go forward
-        self.mainPanel.grid(row = 2, column = 2, rowspan = 4, sticky = W+N)
+        self.mainPanel.grid(row = 3, column = 1, rowspan = 4, sticky = W+N)
 
         # showing bbox info & delete bbox
         self.lb1 = Label(self.frame, text = 'Bounding boxes:')
-        self.lb1.grid(row = 2, column = 3, columnspan=2,  sticky = W+N)
+        self.lb1.grid(row = 3, column = 3, columnspan=2,  sticky = W+N)
         self.listbox = Listbox(self.frame, width = 22, height = 15, bg='gray')
         self.listbox.bind("<Double-Button-1>", self.on_click_listbox)
-        self.listbox.grid(row = 3, column = 3, columnspan=2, sticky = N)
+        self.listbox.grid(row = 4, column = 3, columnspan=2, sticky = N)
         #self.btnDel = Button(self.frame, text = 'Delete', command = self.delBBox)
         #self.btnDel.grid(row = 4, column = 2, sticky = W+E+N)
         #self.btnClear = Button(self.frame, text = 'ClearAll', command = self.clearBBox)
@@ -101,7 +114,7 @@ class LabelTool():
 
         # Action panel for labeling
         self.action_panel = Frame(self.frame)
-        self.action_panel.grid(row=4, column=3, columnspan=2, sticky=N)
+        self.action_panel.grid(row=5, column=3, columnspan=2, sticky=N)
         
         self.sel_bbox_text = StringVar()
         self.sel_person_id = StringVar()
@@ -133,12 +146,16 @@ class LabelTool():
         self.entryStanding = Checkbutton(self.action_panel, text='Can see full body?', variable=self.sel_full_body)
         self.entryStanding.pack()
 
+        self.sel_replace_thmb = IntVar()
+        self.entryReplaceThumbnail = Checkbutton(self.action_panel, text='Replace Thumbnail?', variable=self.sel_replace_thmb)
+        self.entryReplaceThumbnail.pack()
+
         self.btnAddId = Button(self.action_panel, text='Update', command=self.on_click_update)
         self.btnAddId.pack(fill=X)
 
         # control panel for image navigation
         self.ctrPanel = Frame(self.frame)
-        self.ctrPanel.grid(row = 6, column = 1, columnspan = 2, sticky = W+E)
+        self.ctrPanel.grid(row = 7, column = 1, columnspan = 2, sticky = W+E)
         self.progLabel = Label(self.ctrPanel, text = "Progress:     /    ")
         self.progLabel.pack(side = LEFT, padx = 5)
         self.prevBtn = Button(self.ctrPanel, text='<< Prev', width = 10, command = self.prevImage)
@@ -158,12 +175,12 @@ class LabelTool():
 
         # Gallery elements to the left
         self.egPanel = Frame(self.frame, border = 5)
-        self.egPanel.grid(row = 2, column = 0, rowspan = 5, sticky = N)
+        self.egPanel.grid(row = 3, column = 0, rowspan = 5, sticky = N)
         self.egPanelAdditional = Frame(self.frame, border = 5)
         self.egPanelAdditional.grid(row = 2, column = 1, rowspan = 5, sticky = N)
         
         self.galBtnsPanel = Frame(self.frame)
-        self.galBtnsPanel.grid(row = 6, column = 0, sticky = W+E)
+        self.galBtnsPanel.grid(row = 7, column = 0, sticky = W+E)
         self.tmpLabel2 = Label(self.egPanel, text = "Gallery:")
         self.tmpLabel2.pack(side = TOP, pady = 5)
         self.prevGalBtn = Button(self.galBtnsPanel, text='<', width=2, command = self.on_click_prev_ten)
@@ -194,54 +211,11 @@ class LabelTool():
         self.remaining_unlabeled = 0
 
 
-    def loadDir(self, dbg = False):
-        if not dbg:
-            f = self.folder_path_entry.get()
-
-            #s = self.entry.get()
-            self.parent.focus()
-            #self.category = int(s)
-        else:
-            s = r'D:\workspace\python\labelGUI'
-
-        self.imageDir = os.path.join(f, '%s' % IMAGES)
-        self.thumbnails_dir = os.path.join(f, THUMBNAILS)
-        print('Image folder %s' % self.imageDir)
-
-        self.imageList = glob.glob(os.path.join(self.imageDir, '*.jpg'))
-        self.imageList.sort()  # By Tomonori12
-        if len(self.imageList) == 0:
-            print('No .JPEG images found in the specified dir!')  # By Tomonori12
-            return
-
-        # default to the 1st image in the collection
-        self.cur = 1
-        self.total = len(self.imageList)
-
-         # set up output dir
-        self.outDir = os.path.join(f, '%s' % LABELS)
-        self.display_thumbnails()
-
-        # # load example bboxes
-        # self.egDir = os.path.join(r'./Examples')
-        # if not os.path.exists(self.egDir):
-        #     os.mkdir('./Examples')
-
-        # filelist = glob.glob(os.path.join(self.egDir, '*.JPEG'))
-        # self.tmp = []
-        # self.egList = []
-        # random.shuffle(filelist)
-        # for (i, f) in enumerate(filelist):
-        #     if i == 3:
-        #         break
-        #     im = Image.open(f)
-        #     r = min(SIZE[0] / im.size[0], SIZE[1] / im.size[1])
-        #     new_size = int(r * im.size[0]), int(r * im.size[1])
-        #     self.tmp.append(im.resize(new_size, Image.ANTIALIAS))
-        #     self.egList.append(ImageTk.PhotoImage(self.tmp[-1]))
-        #     self.egLabels[i].config(image = self.egList[-1], width = SIZE[0], height = SIZE[1])
-
-        self.loadImage()
+    def loadDir(self, dbg = False):        
+        f = self.folder_path_entry.get()
+        self.root = f
+        self.parent.focus()
+        self.load_scenes()
 
     def loadImage(self):
         # load image
@@ -265,6 +239,50 @@ class LabelTool():
         bbox_cnt = 0
         self.load_bounding_boxes(self.labelfilename, self.img_width, self.img_height)
 
+
+    def load_scenes(self):
+        scenes = [f for f in os.listdir(self.root) if isdir(join(self.root, f))]
+        self.sel_scene = StringVar()
+        self.scene_ddl.destroy()
+        self.scene_ddl = OptionMenu(self.frame, self.sel_scene, *scenes, command=self.load_subdirs)
+        self.scene_ddl.grid(row=1, column=1, sticky=W+E)
+        self.clearBBox()
+        self.clear_selection()
+        self.mainPanel.delete(ALL)
+
+    def load_subdirs(self, scene):
+        subdirs = [f for f in os.listdir(join(self.root, scene)) if isdir(join(self.root, scene, f))]
+        self.subdir_ddl = OptionMenu(self.frame, self.sel_subdir, *subdirs, command=self.on_change_load_dirs)
+        self.subdir_ddl.grid(row=1, column=3, sticky=W+E)
+        self.clearBBox()
+        self.clear_selection()
+        self.mainPanel.delete(ALL)
+
+    def on_change_load_dirs(self, value):
+        self.clearBBox()
+        self.clear_selection()
+        self.mainPanel.delete(ALL)
+
+    def load_data(self):
+        f = join(self.root, self.sel_scene.get(), self.sel_subdir.get())
+        self.imageDir = os.path.join(f, '%s' % IMAGES)
+        self.thumbnails_dir = os.path.join(self.root, THUMBNAILS)
+        print('Image folder %s' % self.imageDir)
+
+        self.imageList = glob.glob(os.path.join(self.imageDir, '*.jpg'))
+        self.imageList.sort()  # By Tomonori12
+        if len(self.imageList) == 0:
+            print('No .JPEG images found in the specified dir!')  # By Tomonori12
+            return
+
+        # default to the 1st image in the collection
+        self.cur = 1
+        self.total = len(self.imageList)
+
+         # set up output dir
+        self.outDir = os.path.join(f, '%s' % LABELS)
+        self.display_thumbnails()
+        self.loadImage()
 
     def load_bounding_boxes(self, filename, width, height):
         self.clearBBox()
@@ -395,9 +413,10 @@ class LabelTool():
             self.loadImage()
 
     def gotoImage(self):
+        self.clear_selection()
         idx = int(self.idxEntry.get())
         if 1 <= idx and idx <= self.total:
-            self.saveImage()
+            #self.saveImage()
             self.cur = idx
             self.loadImage()
 
@@ -424,7 +443,6 @@ class LabelTool():
 
     def on_click_listbox(self, event):
         idx = int(self.listbox.curselection()[0])
-        print("index %d" % idx)
         self.sel_idx = idx
         bbox = self.bboxList[idx]
 
@@ -442,9 +460,9 @@ class LabelTool():
         self.thumbnail.create_image(cw, ch, image=self.selected_thumbnail) 
 
     def on_click_update(self):
-        if int(self.entryPersonId.get()) in self.bbox_person_ids:
-            showerror("Error", "Each entry should have a different person ID")
-            return
+        #if int(self.entryPersonId.get()) in self.bbox_person_ids:
+        #    showerror("Error", "Each entry should have a different person ID")
+        #    return
 
         self.bbox_person_ids[self.sel_idx] = self.entryPersonId.get()
         self.sel_id = self.entryPersonId.get()
@@ -458,15 +476,15 @@ class LabelTool():
                     float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3]), 
                     sv, fb))
         if int(self.sel_id) > 0: 
-            self.save_thumbnail(self.sel_id, self.cropped)
+            self.save_thumbnail(self.sel_id, self.cropped, self.sel_replace_thmb.get())
         self.load_bounding_boxes(self.labelfilename, self.img_width, self.img_height)
 
-    def save_thumbnail(self, id, image):
+    def save_thumbnail(self, id, image, replace):
         if not exists(self.thumbnails_dir):
             os.mkdir(self.thumbnails_dir)
         
         filename = '%s.jpg' % id.zfill(3)
-        if filename not in os.listdir(self.thumbnails_dir):
+        if filename not in os.listdir(self.thumbnails_dir) or replace:
             image.save(join(self.thumbnails_dir, filename))
 
         self.display_thumbnails()
@@ -488,7 +506,8 @@ class LabelTool():
 
             img_t = ImageDraw.Draw(im)
             pid = str(int(f[:-4]))
-            img_t.text((0, 0), pid,(0,255,0))
+            img_t.rectangle([(0, 0), (15, 10)], fill='white')
+            img_t.text((1, 0), pid,(0,0,0))
 
             w, h = im.size
             self.ids_thumbnails.append(ImageTk.PhotoImage(im))
@@ -516,6 +535,7 @@ class LabelTool():
         self.sel_idx = -1
         self.sel_standing.set(0)
         self.sel_full_body.set(0)
+        self.sel_replace_thmb.set(0)
         self.sel_person_id.set('')
         self.thumbnail.delete(ALL)
         self.sel_bbox_text.set('')
