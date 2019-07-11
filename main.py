@@ -68,7 +68,7 @@ class LabelTool():
         content = StringVar()
         self.folder_path_entry = Entry(self.frame, textvariable=content)
         self.folder_path_entry.grid(row = 0, column = 1, columnspan=3, sticky = W+E)
-        content.set('/Users/jtrabucco/Documents/Projects/datasets')
+        content.set('/Users/jtrabucco/Documents/bizon_wework_dataset')
         self.ldBtn = Button(self.frame, text = "Load Scenes", command = self.loadDir)
         self.ldBtn.grid(row = 0, column = 4, sticky = W+E)
 
@@ -91,9 +91,10 @@ class LabelTool():
         #self.mainPanel.bind("<Button-1>", self.mouseClick)
         #self.mainPanel.bind("<Motion>", self.mouseMove)
         #self.parent.bind("<Escape>", self.cancelBBox)  # press <Espace> to cancel current bbox
-        #self.parent.bind("s", self.cancelBBox)
-        self.parent.bind("a", self.prevImage) # press 'a' to go backforward
-        self.parent.bind("d", self.nextImage) # press 'd' to go forward
+        self.parent.bind("e", self.nextImage)
+        self.parent.bind("q", self.prevImage) # press 'a' to go backforward
+        #self.parent.bind("w", self.on_click_update)
+        #self.parent.bind("d", self.nextImage) # press 'd' to go forward
         self.mainPanel.grid(row = 3, column = 1, rowspan = 4, sticky = W+N)
 
         # showing bbox info & delete bbox
@@ -138,7 +139,7 @@ class LabelTool():
         pnl2.pack()
         self.lblPersonId = Label(pnl2, text = "Person Id:")
         self.lblPersonId.pack(side=LEFT)
-        self.entryPersonId = Entry(pnl2, width=5, textvariable=self.sel_person_id)
+        self.entryPersonId = Entry(pnl2, width=5, textvariable=self.sel_person_id, vcmd=self.val_only_integer)
         self.entryPersonId.pack(side=LEFT)
         
         self.entryHard = Checkbutton(self.action_panel, text='Person is standing?', variable=self.sel_standing)
@@ -402,14 +403,14 @@ class LabelTool():
         #self.saveImage()
         self.clear_selection()
         if self.cur > 1:
-            self.cur -= 1
+            self.cur -= 5
             self.loadImage()
 
     def nextImage(self, event = None):
         #self.saveImage()
         self.clear_selection()
         if self.cur < self.total:
-            self.cur += 1
+            self.cur += 5
             self.loadImage()
 
     def gotoImage(self):
@@ -441,6 +442,10 @@ class LabelTool():
             self.person_ids = [1]
         new_id = self.person_ids[-1]
 
+    def val_only_integer(self, v):
+        print(v)
+        return False
+
     def on_click_listbox(self, event):
         idx = int(self.listbox.curselection()[0])
         self.sel_idx = idx
@@ -459,7 +464,7 @@ class LabelTool():
         cw, ch = self.cropped.size
         self.thumbnail.create_image(cw, ch, image=self.selected_thumbnail) 
 
-    def on_click_update(self):
+    def on_click_update(self, event=None):
         #if int(self.entryPersonId.get()) in self.bbox_person_ids:
         #    showerror("Error", "Each entry should have a different person ID")
         #    return
