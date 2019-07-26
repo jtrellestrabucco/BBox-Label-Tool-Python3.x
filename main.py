@@ -212,8 +212,14 @@ class LabelTool():
         self.chk_is_standing.pack()
 
         self.full_body_val = IntVar()
-        self.chk_see_fullbody = Checkbutton(self.action_panel, text='Can see full body?', variable=self.full_body_val)
-        self.chk_see_fullbody.pack()
+        pnl_rbs = Frame(self.action_panel)
+        pnl_rbs.pack(fill=X)
+        Radiobutton(pnl_rbs, text="Full", variable=self.full_body_val, value=0).pack(side=LEFT)
+        Radiobutton(pnl_rbs, text="Half", variable=self.full_body_val, value=1).pack(side=LEFT)
+        Radiobutton(pnl_rbs, text="Head", variable=self.full_body_val, value=2).pack(side=LEFT)
+
+        # self.chk_see_fullbody = Checkbutton(self.action_panel, text='Can see full body?', variable=self.full_body_val)
+        # self.chk_see_fullbody.pack()
 
         self.replace_thmb_val = IntVar()
         self.chk_replace_thumbnail = Checkbutton(self.action_panel, text='Replace Thumbnail?', variable=self.replace_thmb_val)
