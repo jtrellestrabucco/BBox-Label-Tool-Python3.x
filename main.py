@@ -61,8 +61,8 @@ class LabelTool():
         self._create_data_sel_gui()
         self._create_canvas()
 
-        # self.parent.bind("e", self.nextImage)
-        # self.parent.bind("q", self.prevImage) # press 'a' to go backforward
+        self.parent.bind("e", self.nextImage)
+        self.parent.bind("q", self.prevImage) # press 'a' to go backforward
         #self.parent.bind("w", self.on_click_update)
         #self.parent.bind("d", self.nextImage) # press 'd' to go forward
         # self.canvas.grid(row = 3, column = 1, rowspan = 4, sticky = W+N)
