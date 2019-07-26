@@ -104,6 +104,7 @@ class LabelTool():
         self.bbox_person_ids = []
         self.full_body_vals = []
         self.yolo_bboxes = []
+        self.handlers = {}
 
     def _init_vars(self):
         self.bboxes_ids = []        # id references to bboxes managed by Tkinter        
@@ -256,7 +257,12 @@ class LabelTool():
         self.btn_next_gal = Button(self.gal_btns_pnl, text='>', width=2, command = self.on_click_next_ten)
         self.btn_next_gal.pack(side=RIGHT, padx=0, pady=2)
 
-    def _add_bbox(self, event):
+    def _add_handlers(self, bbox_id, x1, y1, x2, y2):
+        id_tl = self.canvas.create_oval(x1 - self.r, y1 - self.r, x1 + self.r, y1 + self.r, fill='yellow', outline='black')
+        id_br = self.canvas.create_oval(x2 - self.r, y2 - self.r, x2 + self.r, y2 + self.r, fill='yellow', outline='black')
+        self.handlers[bbox_id] = [id_tl, id_br]
+
+    def _add_bbox(self, event, new_person_id = 0, standing_val = 0, fb_val = 0):
         if self.STATE['action'] == CREATE:
             x1, x2 = min(self.STATE['x'], event.x), max(self.STATE['x'], event.x)
             y1, y2 = min(self.STATE['y'], event.y), max(self.STATE['y'], event.y)
@@ -269,21 +275,18 @@ class LabelTool():
             y1, y2 = min(y, event.y), max(y, event.y)
         tmp_id = self.curr_bbox_id
 
-        id_tl = self.canvas.create_oval(x1 - self.r, y1 - self.r, x1 + self.r, y1 + self.r, fill='black')
-        id_br = self.canvas.create_oval(x2 - self.r, y2 - self.r, x2 + self.r, y2 + self.r, fill='yellow')
-        self.handlers[self.curr_bbox_id] = [id_tl, id_br]
-
+        # self._add_handlers(self.curr_bbox_id, x1, y1, x2, y2)
         self.bboxes.append((x1, y1, x2, y2))
         self.bboxes_ids.append(self.curr_bbox_id)
         self.yolo_bboxes.append(self.convertRegularToYolo((self.img_width, self.img_height), (x1,y1,x2,y2)))
-        self.bbox_person_ids.append(0)
+        self.bbox_person_ids.append(new_person_id)
 
         outline = COLORS[(len(self.bboxes_ids) - 1) % len(COLORS)]
         self.listbox.insert(END, '%d: (%d, %d) -> (%d, %d)' % (0, x1, y1, x2, y2))
         self.listbox.itemconfig(len(self.bbox_person_ids) - 1, fg = outline)
 
-        self.standing_vals.append(0)
-        self.full_body_vals.append(0)
+        self.standing_vals.append(standing_val)
+        self.full_body_vals.append(fb_val)
         tkinter_label_id = self.canvas.create_text(x1+ 10, y1 + 10, fill=outline, font="Times 16 bold", text='0')
         self.bbox_text_boxes.append(tkinter_label_id)
 
@@ -294,6 +297,7 @@ class LabelTool():
         return x1, y1, x2, y2, tmp_id
 
     def _del_bbox(self, bbox_id):
+        # pdb.set_trace()
         self.canvas.delete(bbox_id)
         if bbox_id in self.handlers.keys():
             for c_id in self.handlers[bbox_id]:
@@ -306,24 +310,40 @@ class LabelTool():
         del self.bbox_text_boxes[idx]   # remove tkinter text from canvas
         del self.standing_vals[idx]     # remove from standing array
         del self.full_body_vals[idx]    # remove from full body array
+        del self.bbox_person_ids[idx]
+        del self.yolo_bboxes[idx]
+        self.canvas.delete(self.bbox_text_boxes[idx])
 
         self._save_to_file()
 
         self.load_bounding_boxes(self.labelfilename, self.img_width, self.img_height)
+
+    def _edit_box(self, event):
+        sel_listbox_idx = self.sel_idx
+        person_id = self.txt_person_id.get()
+        bbox_id = self.bboxes_ids[sel_listbox_idx]
+
+        self._add_bbox(event, new_person_id = int(person_id), \
+            standing_val = self.standing_vals[sel_listbox_idx], \
+            fb_val = self.full_body_vals[sel_listbox_idx])
+        self._del_bbox(bbox_id)
+
 
     def _on_mouse_click_create(self, event):
         if not self.STATE['clicked']:
             self.STATE['x'], self.STATE['y'] = event.x, event.y
             self.corner_selected, self.corner_pos = self._on_corner_selected(event.x, event.y, self.r)
             if self.corner_selected != -1:
+                print('going to edit mode')
                 self.STATE['action'] = EDIT
         else:
             self._add_bbox(event)
     
     def _on_mouse_click_edit(self, event):
         # always performed on clicked so reset to CREATE afterwards
-        self._add_bbox(event)
-        self._del_bbox(self.bboxes_ids[self.corner_selected])
+        # self._add_bbox(event)
+        # self._del_bbox(self.bboxes_ids[self.corner_selected])
+        self._edit_box(event)
         self.STATE['action'] = CREATE
         self.corner_selected = -1
 
@@ -403,6 +423,7 @@ class LabelTool():
     def load_bounding_boxes(self, filename, width, height):
         self.clearBBox()
         self._restart_vars()
+        self._delete_all_handlers()
         
         self.remaining_unlabeled = 0
 
@@ -531,18 +552,14 @@ class LabelTool():
         for idx in range(len(self.bbox_text_boxes)):
             self.canvas.delete(self.bbox_text_boxes[idx])
         self.listbox.delete(0, len(self.bboxes))
-        
-        #self.clear_selection()
 
     def prevImage(self, event = None):
-        #self.saveImage()
         self.clear_selection()
         if self.cur > 1:
             self.cur -= 1
             self.loadImage()
 
     def nextImage(self, event = None):
-        #self.saveImage()
         self.clear_selection()
         if self.cur < self.total:
             self.cur += 1
@@ -552,7 +569,6 @@ class LabelTool():
         self.clear_selection()
         idx = int(self.txt_img_number.get())
         if 1 <= idx and idx <= self.total:
-            #self.saveImage()
             self.cur = idx
             self.loadImage()
 
@@ -588,11 +604,22 @@ class LabelTool():
         print(v)
         return False
 
+    def _delete_all_handlers(self):
+        for k in self.handlers.keys():
+            for v in self.handlers[k]:
+                self.canvas.delete(v)
+        self.handlers = {}
+
     def on_click_listbox(self, event):
         idx = int(self.listbox.curselection()[0])
         print("You clicked %d listbox item"  % idx)
         self.sel_idx = idx
         bbox = self.bboxes[idx]
+
+        # show handlers
+        self._delete_all_handlers()
+        bbox_id = self.bboxes_ids[idx]
+        self._add_handlers(bbox_id, bbox[0], bbox[1], bbox[2], bbox[3])
 
         self.sel_id = self.listbox.get(idx).split(":")[0]
         self.sel_person_id.set(str(self.sel_id))
