@@ -1,15 +1,14 @@
 #-------------------------------------------------------------------------------
-# Name:        Object bounding box label tool
-# Purpose:     Label object bboxes for ImageNet Detection data
-# Author:      Qiushi
-# Created:     06/06/2014
-
-#
+# Modified Labeling Tool for Person Reidentification based on:
+#       Name:        Object bounding box label tool
+#       Purpose:     Label object bboxes for ImageNet Detection data
+#       Author:      Qiushi
+#       Created:     06/06/2014
 #-------------------------------------------------------------------------------
+
 from __future__ import division
-#from Tkinter import *
+import pdb
 from tkinter import *
-#import tkMessageBox
 import tkinter.messagebox
 from PIL import Image, ImageTk, ImageDraw, ImageFont
 from tkinter.messagebox import showerror
@@ -26,12 +25,21 @@ IMAGES = 'JPEGImages'
 LABELS = 'labels'
 THUMBNAILS = 'thumbnails'
 
+# Canvas constants
+CLICKED = True
+RADIUS = 5
+TOP_LEFT = 0
+BOTTOM_RIGHT = 1
+EDIT = 'edit'
+CREATE = 'create'
+
+SOURCE_PATH = '/Users/jtrabucco/Documents/Projects/datasets'
 
 class LabelTool():
     def __init__(self, master):
         # set up the main frame
         self.parent = master
-        self.parent.title("LabelTool")
+        self.parent.title("Labeling Tool")
         self.frame = Frame(self.parent)
         self.frame.pack(fill=BOTH, expand=1)
         self.parent.resizable(width = FALSE, height = FALSE)
@@ -47,152 +55,27 @@ class LabelTool():
         self.category = 0
         self.imagename = ''
         self.labelfilename = ''
-        self.tkimg = None
 
-        # initialize mouse state
-        self.STATE = {}
-        self.STATE['click'] = 0
-        self.STATE['x'], self.STATE['y'] = 0, 0
+        self._init_mouse_state()
+        self._init_vars()
+        self._create_data_sel_gui()
+        self._create_canvas()
 
-        # reference to bbox
-        self.bboxIdList = []
-        self.bboxId = None
-        self.bboxList = []
-        self.hl = None
-        self.vl = None
-
-        # ----------------- GUI stuff ---------------------
-        self.folder_path = Label(self.frame, text="Source Path:")
-        self.folder_path.grid(row = 0, column = 0, sticky = E)
-
-        content = StringVar()
-        self.folder_path_entry = Entry(self.frame, textvariable=content)
-        self.folder_path_entry.grid(row = 0, column = 1, columnspan=3, sticky = W+E)
-        content.set('/Users/jtrabucco/Documents/bizon_wework_dataset')
-        self.ldBtn = Button(self.frame, text = "Load Scenes", command = self.loadDir)
-        self.ldBtn.grid(row = 0, column = 4, sticky = W+E)
-
-        self.sel_scene = StringVar()
-        self.scene_label = Label(self.frame, text="Scene:")
-        self.scene_label.grid(row = 1, column = 0, sticky = E)
-        self.scene_ddl = OptionMenu(self.frame, self.sel_scene, "")
-        self.scene_ddl.grid(row=1, column=1)
-
-        self.sel_subdir = StringVar()
-        self.subdir_label = Label(self.frame, text="Folder:")
-        self.subdir_label.grid(row=1, column=2, sticky=E)
-
-        self.ld_data_btn = Button(self.frame, text = "Load Data", command = self.load_data)
-        self.ld_data_btn.grid(row = 1, column = 4, sticky = W+E)
-
-        # main panel for labeling
-        #self.mainPanel = Canvas(self.frame, cursor='tcross')
-        self.mainPanel = Canvas(self.frame)
-        #self.mainPanel.bind("<Button-1>", self.mouseClick)
-        #self.mainPanel.bind("<Motion>", self.mouseMove)
-        #self.parent.bind("<Escape>", self.cancelBBox)  # press <Espace> to cancel current bbox
-        self.parent.bind("e", self.nextImage)
-        self.parent.bind("q", self.prevImage) # press 'a' to go backforward
+        # self.parent.bind("e", self.nextImage)
+        # self.parent.bind("q", self.prevImage) # press 'a' to go backforward
         #self.parent.bind("w", self.on_click_update)
         #self.parent.bind("d", self.nextImage) # press 'd' to go forward
-        self.mainPanel.grid(row = 3, column = 1, rowspan = 4, sticky = W+N)
+        # self.canvas.grid(row = 3, column = 1, rowspan = 4, sticky = W+N)
 
-        # showing bbox info & delete bbox
-        self.lb1 = Label(self.frame, text = 'Bounding boxes:')
-        self.lb1.grid(row = 3, column = 3, columnspan=2,  sticky = W+N)
-        self.listbox = Listbox(self.frame, width = 22, height = 15, bg='gray')
-        self.listbox.bind("<Double-Button-1>", self.on_click_listbox)
-        self.listbox.grid(row = 4, column = 3, columnspan=2, sticky = N)
-        #self.btnDel = Button(self.frame, text = 'Delete', command = self.delBBox)
-        #self.btnDel.grid(row = 4, column = 2, sticky = W+E+N)
-        #self.btnClear = Button(self.frame, text = 'ClearAll', command = self.clearBBox)
-        #self.btnClear.grid(row = 5, column = 2, sticky = W+E+N)
+        self._create_listbox_gui()
+        self._create_info_panel_gui()
+        self._create_img_nav_gui()
+        self._create_gallery_gui()
 
-        #self.sel_thumbnail = Frame(self.frame, border = 10)
-        #self.sel_thumbnail.grid(row = 5, column = 2, columnspan=2, rowspan = 3, sticky = N)
-        #self.sel_thumb_label = Label(self.sel_thumbnail)
-        #self.sel_thumb_label.pack(side = TOP)
-
-        # Action panel for labeling
-        self.action_panel = Frame(self.frame)
-        self.action_panel.grid(row=5, column=3, columnspan=2, sticky=N)
-        
-        self.sel_bbox_text = StringVar()
-        self.sel_person_id = StringVar()
-        self.sel_standing = IntVar()
-        self.sel_full_body = IntVar()
-
-        self.lbUpdate = Label(self.action_panel, text = 'Selected Item')
-        self.lbUpdate.pack()
-
-        self.thumbnail = Canvas(self.action_panel, width = 200, height = 200, bd='5', bg='black')  
-        self.thumbnail.pack()
-
-        pnl1 = Frame(self.action_panel)
-        pnl1.pack()
-        self.sel_bbox_label = Label(pnl1, text='BBox:')
-        self.sel_bbox_label.pack(side=LEFT)
-        self.sel_bbox_value = Label(pnl1, textvariable=self.sel_bbox_text)
-        self.sel_bbox_value.pack(side=LEFT)
-
-        pnl2 = Frame(self.action_panel)
-        pnl2.pack()
-        self.lblPersonId = Label(pnl2, text = "Person Id:")
-        self.lblPersonId.pack(side=LEFT)
-        self.entryPersonId = Entry(pnl2, width=5, textvariable=self.sel_person_id, vcmd=self.val_only_integer)
-        self.entryPersonId.pack(side=LEFT)
-        
-        self.entryHard = Checkbutton(self.action_panel, text='Person is standing?', variable=self.sel_standing)
-        self.entryHard.pack()
-        self.entryStanding = Checkbutton(self.action_panel, text='Can see full body?', variable=self.sel_full_body)
-        self.entryStanding.pack()
-
-        self.sel_replace_thmb = IntVar()
-        self.entryReplaceThumbnail = Checkbutton(self.action_panel, text='Replace Thumbnail?', variable=self.sel_replace_thmb)
-        self.entryReplaceThumbnail.pack()
-
-        self.btnAddId = Button(self.action_panel, text='Update', command=self.on_click_update)
-        self.btnAddId.pack(fill=X)
-
-        # control panel for image navigation
-        self.ctrPanel = Frame(self.frame)
-        self.ctrPanel.grid(row = 7, column = 1, columnspan = 2, sticky = W+E)
-        self.progLabel = Label(self.ctrPanel, text = "Progress:     /    ")
-        self.progLabel.pack(side = LEFT, padx = 5)
-        self.prevBtn = Button(self.ctrPanel, text='<< Prev', width = 10, command = self.prevImage)
-        self.prevBtn.pack(side = LEFT, padx = 5, pady = 3)
-        self.nextBtn = Button(self.ctrPanel, text='Next >>', width = 10, command = self.nextImage)
-        self.nextBtn.pack(side = LEFT, padx = 5, pady = 3)
-        self.tmpLabel = Label(self.ctrPanel, text = "Go to Image No.")
-        self.tmpLabel.pack(side = LEFT, padx = 5)
-        self.idxEntry = Entry(self.ctrPanel, width = 5)
-        self.idxEntry.pack(side = LEFT)
-        self.goBtn = Button(self.ctrPanel, text = 'Go', command = self.gotoImage)
-        self.goBtn.pack(side = LEFT)
-
-        self.remaining_entry = StringVar()
-        self.remainingLabel = Label(self.ctrPanel, text= "Remaining unlabeled: X", textvariable=self.remaining_entry)
-        self.remainingLabel.pack(side=RIGHT)
-
-        # Gallery elements to the left
-        self.egPanel = Frame(self.frame, border = 5)
-        self.egPanel.grid(row = 3, column = 0, rowspan = 5, sticky = N)
-        self.egPanelAdditional = Frame(self.frame, border = 5)
-        self.egPanelAdditional.grid(row = 2, column = 1, rowspan = 5, sticky = N)
-        
-        self.galBtnsPanel = Frame(self.frame)
-        self.galBtnsPanel.grid(row = 7, column = 0, sticky = W+E)
-        self.tmpLabel2 = Label(self.egPanel, text = "Gallery:")
-        self.tmpLabel2.pack(side = TOP, pady = 5)
-        self.prevGalBtn = Button(self.galBtnsPanel, text='<', width=2, command = self.on_click_prev_ten)
-        self.prevGalBtn.pack(side=LEFT, padx=0, pady=2)
-        self.nextGalBtn = Button(self.galBtnsPanel, text='>', width=2, command = self.on_click_next_ten)
-        self.nextGalBtn.pack(side=RIGHT, padx=0, pady=2)
         self.egLabels = []
 
-
         # display mouse position
-        self.disp = Label(self.ctrPanel, text='')
+        self.disp = Label(self.ctr_panel, text='')
         self.disp.pack(side = RIGHT)
 
         self.frame.columnconfigure(1, weight = 1)
@@ -200,20 +83,252 @@ class LabelTool():
 
         self.person_ids = None
         self.yolo_bboxes = []
-        self.bbox_person_ids = []
-        self.bbox_text_boxes = []
         self.standing_vals = []
         self.full_body_vals = []
         self.sel_idx = -1
         self.img_width = 0
         self.img_height = 0
-        self.ids_thumbnails = []
-        self.gallery_idx = 1
+
+    def _init_mouse_state(self):
+        self.STATE = {}
+        self.STATE['clicked'] = not CLICKED
+        self.STATE['action'] = CREATE
+        self.STATE['x'], self.STATE['y'] = 0, 0    
+
+    def _restart_vars(self):
+        self.bboxes_ids = []
+        self.bboxes = [] 
+        self.bbox_text_boxes = []
+        self.handlers = {}
+        self.standing_vals = []
+        self.bbox_person_ids = []
+        self.full_body_vals = []
+        self.yolo_bboxes = []
+
+    def _init_vars(self):
+        self.bboxes_ids = []        # id references to bboxes managed by Tkinter        
+        self.bboxes = []            # (x1,y1,x2,y2) for all ids in bboxes_ids
+        self.bbox_text_boxes = []   # id references of bbox person_id labels
+        self.curr_bbox_id = None    # current bbox being drawn
+        self.corner_selected = -1   # flag bounding box corner selected or not
+        self.corner_pos = None      # indicate TOP_LEFT or BOTTOM_RIGHT handle
+        self.handlers = {}          # references to the circles in the rectangle corners
+        self.r = 5
+        self.bbox_person_ids = []
+
+        self.gal_nav_idx = 1
+        self.thumbnail_ids = []
+
         self.remaining_unlabeled = 0
 
+        self.hl = None              # horizontal line (not used now)
+        self.vl = None
+        self.tkimg = None
+
+    def _create_data_sel_gui(self):
+        self.lbl_folder_path = Label(self.frame, text="Source Path:")
+        self.lbl_folder_path.grid(row = 0, column = 0, sticky = E)
+
+        source_folder_path = StringVar()
+        self.txt_folder_path = Entry(self.frame, textvariable=source_folder_path)
+        self.txt_folder_path.grid(row = 0, column = 1, columnspan=3, sticky = W+E)
+        source_folder_path.set(SOURCE_PATH)
+
+        self.btn_load_scenes = Button(self.frame, text = "Load Scenes", command = self.loadDir)
+        self.btn_load_scenes.grid(row = 0, column = 4, sticky = W+E)
+
+        self.sel_scene = StringVar()
+        self.lbl_scene = Label(self.frame, text="Scene:")
+        self.lbl_scene.grid(row = 1, column = 0, sticky = E)
+        self.ddl_scene = OptionMenu(self.frame, self.sel_scene, "")
+        self.ddl_scene.grid(row=1, column=1)
+
+        self.sel_subdir = StringVar()
+        self.lbl_subdir = Label(self.frame, text="Folder:")
+        self.lbl_subdir.grid(row=1, column=2, sticky=E)
+
+        self.btn_load_data = Button(self.frame, text = "Load Data", command = self.load_data)
+        self.btn_load_data.grid(row = 1, column = 4, sticky = W+E)
+
+    def _create_canvas(self):
+        self.canvas = Canvas(self.frame, cursor='tcross')
+        self.canvas.grid(row = 3, column = 1, rowspan = 4, sticky = W+N)
+        # self.canvas.pack(fill=BOTH, expand=True)
+
+        self.canvas.bind("<Button-1>", self._on_mouse_click)
+        self.canvas.bind("<Motion>", self._on_mouse_move)
+        self.parent.bind("<Escape>", self._on_cancel_bbox)
+
+    def _create_listbox_gui(self):
+        lb_pnl = Frame(self.frame)
+        lb_pnl.grid(row=3, column=3, columnspan=2, sticky=N)
+
+        self.lb1 = Label(lb_pnl, text = 'Bounding boxes:')
+        # self.lb1.grid(row = 3, column = 3, columnspan=2,  sticky = W+N)
+        self.lb1.pack()
+
+        self.listbox = Listbox(lb_pnl, width = 22, height = 15, bg='gray')
+        self.listbox.bind("<Double-Button-1>", self.on_click_listbox)
+        self.listbox.pack()
+        # self.listbox.grid(row = 4, column = 3, columnspan=2, sticky = N)
+        self.btnDel = Button(lb_pnl, text = 'Delete', command = self._on_delete_click)
+        self.btnDel.pack(fill=X)
+        # self.btnDel.grid(row = 5, column = 3, sticky = W+E+N)
+        #self.btnClear = Button(lb_pnl, text = 'ClearAll', command = self.clearBBox)
+        #self.btnClear.pack(fill=X)
+        # self.btnClear.grid(row = 6, column = 3, sticky = W+E+N)
+
+    def _create_info_panel_gui(self):
+        self.action_panel = Frame(self.frame)
+        self.action_panel.grid(row=5, column=3, columnspan=2, sticky=N)
+        
+        self.lbl_sel_item = Label(self.action_panel, text = 'Selected Item')
+        self.lbl_sel_item.pack()
+
+        self.thumbnail = Canvas(self.action_panel, width = 200, height = 200, bd='5', bg='black')  
+        self.thumbnail.pack()
+
+        pnl1 = Frame(self.action_panel)
+        pnl1.pack()
+
+        self.lbl_bbox = Label(pnl1, text='BBox:')
+        self.lbl_bbox.pack(side=LEFT)
+        self.sel_bbox_val = StringVar()
+        self.lbl_sel_bbox_val = Label(pnl1, textvariable=self.sel_bbox_val)
+        self.lbl_sel_bbox_val.pack(side=LEFT)
+
+        pnl2 = Frame(self.action_panel)
+        pnl2.pack()
+
+        self.lbl_person_id = Label(pnl2, text = "Person Id:")
+        self.lbl_person_id.pack(side=LEFT)
+        self.sel_person_id = StringVar()
+        self.txt_person_id = Entry(pnl2, width=5, textvariable=self.sel_person_id, vcmd=self.val_only_integer)
+        self.txt_person_id.pack(side=LEFT)
+        
+        self.standing_val = IntVar()
+        self.chk_is_standing = Checkbutton(self.action_panel, text='Person is standing?', variable=self.standing_val)
+        self.chk_is_standing.pack()
+
+        self.full_body_val = IntVar()
+        self.chk_see_fullbody = Checkbutton(self.action_panel, text='Can see full body?', variable=self.full_body_val)
+        self.chk_see_fullbody.pack()
+
+        self.replace_thmb_val = IntVar()
+        self.chk_replace_thumbnail = Checkbutton(self.action_panel, text='Replace Thumbnail?', variable=self.replace_thmb_val)
+        self.chk_replace_thumbnail.pack()
+
+        self.btn_update_data = Button(self.action_panel, text='Update', command=self.on_click_update)
+        self.btn_update_data.pack(fill=X)
+
+    def _create_img_nav_gui(self):
+        self.ctr_panel = Frame(self.frame)
+        self.ctr_panel.grid(row = 7, column = 1, columnspan = 2, sticky = W+E)
+        self.lbl_progress = Label(self.ctr_panel, text = "Progress:     /    ")
+        self.lbl_progress.pack(side = LEFT, padx = 5)
+        self.btn_prev = Button(self.ctr_panel, text='<< Prev', width = 10, command = self.prevImage)
+        self.btn_prev.pack(side = LEFT, padx = 5, pady = 3)
+        self.btn_next = Button(self.ctr_panel, text='Next >>', width = 10, command = self.nextImage)
+        self.btn_next.pack(side = LEFT, padx = 5, pady = 3)
+        self.lbl_go_to = Label(self.ctr_panel, text = "Go to Image No.")
+        self.lbl_go_to.pack(side = LEFT, padx = 5)
+        self.txt_img_number = Entry(self.ctr_panel, width = 5)
+        self.txt_img_number.pack(side = LEFT)
+        self.btn_go2image = Button(self.ctr_panel, text = 'Go', command = self.gotoImage)
+        self.btn_go2image.pack(side = LEFT)
+
+        self.remaining_val = StringVar()
+        self.lbl_remaining = Label(self.ctr_panel, text= "Remaining unlabeled: X", textvariable=self.remaining_val)
+        self.lbl_remaining.pack(side=RIGHT)
+
+    def _create_gallery_gui(self):
+        self.gallery_panel = Frame(self.frame, border = 5)
+        self.gallery_panel.grid(row = 3, column = 0, rowspan = 5, sticky = N)
+        # self.egPanelAdditional = Frame(self.frame, border = 5)
+        # self.egPanelAdditional.grid(row = 2, column = 1, rowspan = 5, sticky = N)
+        
+        self.gal_btns_pnl = Frame(self.frame)
+        self.gal_btns_pnl.grid(row = 7, column = 0, sticky = W+E)
+        self.lbl_gallery = Label(self.gallery_panel, text = "Gallery:")
+        self.lbl_gallery.pack(side = TOP, pady = 5)
+        self.btn_prev_gal = Button(self.gal_btns_pnl, text='<', width=2, command = self.on_click_prev_ten)
+        self.btn_prev_gal.pack(side=LEFT, padx=0, pady=2)
+        self.btn_next_gal = Button(self.gal_btns_pnl, text='>', width=2, command = self.on_click_next_ten)
+        self.btn_next_gal.pack(side=RIGHT, padx=0, pady=2)
+
+    def _add_bbox(self, event):
+        if self.STATE['action'] == CREATE:
+            x1, x2 = min(self.STATE['x'], event.x), max(self.STATE['x'], event.x)
+            y1, y2 = min(self.STATE['y'], event.y), max(self.STATE['y'], event.y)
+        else:
+            if self.corner_pos == BOTTOM_RIGHT:
+                x, y = self.bboxes[self.corner_selected][2], self.bboxes[self.corner_selected][3]
+            else:
+                x, y = self.bboxes[self.corner_selected][0], self.bboxes[self.corner_selected][1]
+            x1, x2 = min(x, event.x), max(x, event.x)
+            y1, y2 = min(y, event.y), max(y, event.y)
+        tmp_id = self.curr_bbox_id
+
+        id_tl = self.canvas.create_oval(x1 - self.r, y1 - self.r, x1 + self.r, y1 + self.r, fill='black')
+        id_br = self.canvas.create_oval(x2 - self.r, y2 - self.r, x2 + self.r, y2 + self.r, fill='yellow')
+        self.handlers[self.curr_bbox_id] = [id_tl, id_br]
+
+        self.bboxes.append((x1, y1, x2, y2))
+        self.bboxes_ids.append(self.curr_bbox_id)
+        self.yolo_bboxes.append(self.convertRegularToYolo((self.img_width, self.img_height), (x1,y1,x2,y2)))
+        self.bbox_person_ids.append(0)
+
+        outline = COLORS[(len(self.bboxes_ids) - 1) % len(COLORS)]
+        self.listbox.insert(END, '%d: (%d, %d) -> (%d, %d)' % (0, x1, y1, x2, y2))
+        self.listbox.itemconfig(len(self.bbox_person_ids) - 1, fg = outline)
+
+        self.standing_vals.append(0)
+        self.full_body_vals.append(0)
+        tkinter_label_id = self.canvas.create_text(x1+ 10, y1 + 10, fill=outline, font="Times 16 bold", text='0')
+        self.bbox_text_boxes.append(tkinter_label_id)
+
+        print(self.bbox_person_ids)
+        self._save_to_file()
+
+        self.curr_bbox_id = None
+        return x1, y1, x2, y2, tmp_id
+
+    def _del_bbox(self, bbox_id):
+        self.canvas.delete(bbox_id)
+        if bbox_id in self.handlers.keys():
+            for c_id in self.handlers[bbox_id]:
+                self.canvas.delete(c_id)
+            del self.handlers[bbox_id]      # remove handlers from canvas
+        
+        idx = self.bboxes_ids.index(bbox_id)
+        del self.bboxes_ids[idx]        # remove tkinter rectangle id
+        del self.bboxes[idx]            # remove bounding box data
+        del self.bbox_text_boxes[idx]   # remove tkinter text from canvas
+        del self.standing_vals[idx]     # remove from standing array
+        del self.full_body_vals[idx]    # remove from full body array
+
+        self._save_to_file()
+
+        self.load_bounding_boxes(self.labelfilename, self.img_width, self.img_height)
+
+    def _on_mouse_click_create(self, event):
+        if not self.STATE['clicked']:
+            self.STATE['x'], self.STATE['y'] = event.x, event.y
+            self.corner_selected, self.corner_pos = self._on_corner_selected(event.x, event.y, self.r)
+            if self.corner_selected != -1:
+                self.STATE['action'] = EDIT
+        else:
+            self._add_bbox(event)
+    
+    def _on_mouse_click_edit(self, event):
+        # always performed on clicked so reset to CREATE afterwards
+        self._add_bbox(event)
+        self._del_bbox(self.bboxes_ids[self.corner_selected])
+        self.STATE['action'] = CREATE
+        self.corner_selected = -1
 
     def loadDir(self, dbg = False):        
-        f = self.folder_path_entry.get()
+        f = self.txt_folder_path.get()
         self.root = f
         self.parent.focus()
         self.load_scenes()
@@ -225,9 +340,9 @@ class LabelTool():
         self.img = self.img.resize((900, 650), Image.ANTIALIAS)
 
         self.tkimg = ImageTk.PhotoImage(self.img)
-        self.mainPanel.config(width = max(self.tkimg.width(), 400), height = max(self.tkimg.height(), 400))
-        self.mainPanel.create_image(0, 0, image = self.tkimg, anchor=NW)
-        self.progLabel.config(text = "%04d/%04d" %(self.cur, self.total))
+        self.canvas.config(width = max(self.tkimg.width(), 400), height = max(self.tkimg.height(), 400))
+        self.canvas.create_image(0, 0, image = self.tkimg, anchor=NW)
+        self.lbl_progress.config(text = "%04d/%04d" %(self.cur, self.total))
 
         # load labels
         self.img_width, self.img_height = self.img.size
@@ -244,12 +359,12 @@ class LabelTool():
     def load_scenes(self):
         scenes = [f for f in os.listdir(self.root) if isdir(join(self.root, f))]
         self.sel_scene = StringVar()
-        self.scene_ddl.destroy()
-        self.scene_ddl = OptionMenu(self.frame, self.sel_scene, *scenes, command=self.load_subdirs)
-        self.scene_ddl.grid(row=1, column=1, sticky=W+E)
+        self.ddl_scene.destroy()
+        self.ddl_scene = OptionMenu(self.frame, self.sel_scene, *scenes, command=self.load_subdirs)
+        self.ddl_scene.grid(row=1, column=1, sticky=W+E)
         self.clearBBox()
         self.clear_selection()
-        self.mainPanel.delete(ALL)
+        self.canvas.delete(ALL)
 
     def load_subdirs(self, scene):
         subdirs = [f for f in os.listdir(join(self.root, scene)) if isdir(join(self.root, scene, f))]
@@ -257,12 +372,12 @@ class LabelTool():
         self.subdir_ddl.grid(row=1, column=3, sticky=W+E)
         self.clearBBox()
         self.clear_selection()
-        self.mainPanel.delete(ALL)
+        self.canvas.delete(ALL)
 
     def on_change_load_dirs(self, value):
         self.clearBBox()
         self.clear_selection()
-        self.mainPanel.delete(ALL)
+        self.canvas.delete(ALL)
 
     def load_data(self):
         f = join(self.root, self.sel_scene.get(), self.sel_subdir.get())
@@ -287,16 +402,17 @@ class LabelTool():
 
     def load_bounding_boxes(self, filename, width, height):
         self.clearBBox()
+        self._restart_vars()
+        
         self.remaining_unlabeled = 0
 
         if os.path.exists(filename):
             print(filename)
             with open(filename) as f:
-                for (i, line) in enumerate(f):
+                for line in f:
                     vals = [t.strip() for t in line.split()]
 
-                    # Load the standing features, new label files
-                    # are not complete
+                    # Load the standing features, new label files are not complete
                     if len(vals) == 5:
                         standing = 0
                         see_full_body = 0
@@ -314,108 +430,127 @@ class LabelTool():
                     self.yolo_bboxes.append(yolo_bbox)
 
                     bbox = self.convertYoloToRegular([width, height], yolo_bbox)
-                    self.bboxList.append(tuple(bbox))
+                    self.bboxes.append(tuple(bbox))
 
-                    outline_color = COLORS[(len(self.bboxList)-1) % len(COLORS)]
-                    tmpId = self.mainPanel.create_rectangle(bbox[0], bbox[1], \
-                                                            bbox[2], bbox[3], \
-                                                            width = 2, \
-                                                            outline = outline_color)
-                    tmpTxtId = self.mainPanel.create_text(bbox[0] + 10, bbox[1] + 10, fill=outline_color, font="Times 16 bold", text=str(p_id))
-                    self.bbox_text_boxes.append(tmpTxtId)
-
+                    outline_color = COLORS[(len(self.bboxes)-1) % len(COLORS)]
+                    tkinter_bbox_id = self.canvas.create_rectangle(bbox[0], bbox[1], bbox[2], bbox[3], width = 2, outline = outline_color)
+                    tkinter_label_id = self.canvas.create_text(bbox[0] + 10, bbox[1] + 10, fill=outline_color, font="Times 16 bold", text=str(p_id))
+                    
                     self.bbox_person_ids.append(p_id)
-                    self.bboxIdList.append(tmpId)
+                    self.bboxes_ids.append(tkinter_bbox_id)
+                    self.bbox_text_boxes.append(tkinter_label_id)
                     self.listbox.insert(END, '%d: (%d, %d) -> (%d, %d)' %(p_id, bbox[0], bbox[1], bbox[2], bbox[3]))
-                    self.listbox.itemconfig(len(self.bboxIdList) - 1, fg = outline_color) 
-            self.remaining_entry.set('Remaining unlabeled: %d' % self.remaining_unlabeled)
+                    self.listbox.itemconfig(len(self.bbox_person_ids) - 1, fg = outline_color) 
+            self.remaining_val.set('Remaining unlabeled: %d' % self.remaining_unlabeled)
         else:
             print('File does not exist')       
 
 
     def saveImage(self):
         with open(self.labelfilename, 'w') as f:
-            f.write('%d\n' %len(self.bboxList))
-            for bbox in self.bboxList:
+            f.write('%d\n' %len(self.bboxes))
+            for bbox in self.bboxes:
                 f.write(' '.join(map(str, bbox)) + '\n')
-        print('Image No. %d saved' %(self.cur))  # By Tomonori12
+        print('Image No. %d saved' %(self.cur))
 
 
-    def mouseClick(self, event):
-        if self.STATE['click'] == 0:
-            self.STATE['x'], self.STATE['y'] = event.x, event.y
+    def _on_mouse_click(self, event):
+        if self.STATE['action'] == CREATE:
+            self._on_mouse_click_create(event)
         else:
-            x1, x2 = min(self.STATE['x'], event.x), max(self.STATE['x'], event.x)
-            y1, y2 = min(self.STATE['y'], event.y), max(self.STATE['y'], event.y)
-            self.bboxList.append((x1, y1, x2, y2))
-            self.bboxIdList.append(self.bboxId)
-            self.bboxId = None
-            self.listbox.insert(END, '(%d, %d) -> (%d, %d)' %(x1, y1, x2, y2))
-            self.listbox.itemconfig(len(self.bboxIdList) - 1, fg = COLORS[(len(self.bboxIdList) - 1) % len(COLORS)])
-        self.STATE['click'] = 1 - self.STATE['click']
-
-    def mouseMove(self, event):
+            self._on_mouse_click_edit(event)
+        self.STATE['clicked'] = not self.STATE['clicked']
+        
+    def _on_mouse_move(self, event):
         self.disp.config(text = 'x: %d, y: %d' %(event.x, event.y))
         if self.tkimg:
             if self.hl:
-                self.mainPanel.delete(self.hl)
-            self.hl = self.mainPanel.create_line(0, event.y, self.tkimg.width(), event.y, width = 2)
+                self.canvas.delete(self.hl)
+            self.hl = self.canvas.create_line(0, event.y, self.tkimg.width(), event.y, width = 2)
             if self.vl:
-                self.mainPanel.delete(self.vl)
-            self.vl = self.mainPanel.create_line(event.x, 0, event.x, self.tkimg.height(), width = 2)
-        if 1 == self.STATE['click']:
-            if self.bboxId:
-                self.mainPanel.delete(self.bboxId)
-            self.bboxId = self.mainPanel.create_rectangle(self.STATE['x'], self.STATE['y'], \
+                self.canvas.delete(self.vl)
+            self.vl = self.canvas.create_line(event.x, 0, event.x, self.tkimg.height(), width = 2)
+        
+        if self.STATE['clicked']:
+            if self.curr_bbox_id:
+                self.canvas.delete(self.curr_bbox_id)
+            self.curr_bbox_id = self.canvas.create_rectangle(self.STATE['x'], self.STATE['y'], \
                                                             event.x, event.y, \
                                                             width = 2, \
-                                                            outline = COLORS[len(self.bboxList) % len(COLORS)])
+                                                            outline = COLORS[len(self.bboxes) % len(COLORS)])
+        if self.corner_selected != -1:
+            old_bbox = self.bboxes[self.corner_selected]
+            self.canvas.delete(self.curr_bbox_id)
+            if self.corner_pos == TOP_LEFT:
+                x1, y1 = event.x, event.y
+                x2, y2 = old_bbox[0], old_bbox[1]
+            else:
+                x1, y1 = event.x, event.y
+                x2, y2 = old_bbox[2], old_bbox[3]
+            outline = COLORS[len(self.bboxes) % len(COLORS)]
+            self.curr_bbox_id = self.canvas.create_rectangle(x1, y1, x2, y2, width = 2, outline = outline)
 
-    def cancelBBox(self, event):
-        if 1 == self.STATE['click']:
-            if self.bboxId:
-                self.mainPanel.delete(self.bboxId)
+    def _on_corner_selected(self, x, y, r):
+        for idx, bbox in enumerate(self.bboxes):
+            if self._is_vertex_inside_area(x, y, bbox[0], bbox[1], r):
+                self.STATE['x'] = bbox[0]
+                self.STATE['y'] = bbox[1]
+                return idx, TOP_LEFT
+            if self._is_vertex_inside_area(x, y, bbox[2], bbox[3], r):
+                self.STATE['x'] = bbox[0]
+                self.STATE['y'] = bbox[1]
+                return idx, BOTTOM_RIGHT
+        return -1, None
+
+    def _is_vertex_inside_area(self, x, y, xc, yc, r):
+        if x >= xc - r and x <= xc + r and y >= yc - r and y <= yc + 5:
+            return True
+        return False
+
+    def _on_cancel_bbox(self, event):
+        if self.STATE['clicked']:
+            if self.curr_bbox_id:
+                self.canvas.delete(self.curr_bbox_id)
                 self.bboxId = None
-                self.STATE['click'] = 0
+                self.STATE['clicked'] = False
+                self.STATE['action'] = CREATE
+                self.corner_selected = -1
+                self.corner_pos = None
 
-    def delBBox(self):
-        sel = self.listbox.curselection()
-        if len(sel) != 1 :
-            return
-        idx = int(sel[0])
-        self.mainPanel.delete(self.bboxIdList[idx])
-        self.bboxIdList.pop(idx)
-        self.bboxList.pop(idx)
-        self.listbox.delete(idx)
+    def _on_delete_click(self):
+        idx = int(self.listbox.curselection()[0])
+        self._del_bbox(self.bboxes_ids[idx])
+        # self.canvas.delete(self.bboxes_ids[idx])
+        # self.bboxes_ids.pop(idx)
+        # self.bboxes.pop(idx)
+        # self.listbox.delete(idx)
 
     def clearBBox(self):
-        for idx in range(len(self.bboxIdList)):
-            self.mainPanel.delete(self.bboxIdList[idx])
+        for idx in range(len(self.bboxes_ids)):
+            self.canvas.delete(self.bboxes_ids[idx])
         for idx in range(len(self.bbox_text_boxes)):
-            self.mainPanel.delete(self.bbox_text_boxes[idx])
-        self.listbox.delete(0, len(self.bboxList))
-        self.bboxIdList = []
-        self.bboxList = []
-        self.yolo_bbox = []
-        self.bbox_person_ids = []
+            self.canvas.delete(self.bbox_text_boxes[idx])
+        self.listbox.delete(0, len(self.bboxes))
+        
+        #self.clear_selection()
 
     def prevImage(self, event = None):
         #self.saveImage()
         self.clear_selection()
         if self.cur > 1:
-            self.cur -= 5
+            self.cur -= 1
             self.loadImage()
 
     def nextImage(self, event = None):
         #self.saveImage()
         self.clear_selection()
         if self.cur < self.total:
-            self.cur += 5
+            self.cur += 1
             self.loadImage()
 
     def gotoImage(self):
         self.clear_selection()
-        idx = int(self.idxEntry.get())
+        idx = int(self.txt_img_number.get())
         if 1 <= idx and idx <= self.total:
             #self.saveImage()
             self.cur = idx
@@ -426,6 +561,13 @@ class LabelTool():
         x1 = int(((2*size[0]*float(box[0]))-(size[0]*float(box[2])))/2)
         y2 = int(((2*size[1]*float(box[1]))+(size[1]*float(box[3])))/2)
         y1 = int(((2*size[1]*float(box[1]))-(size[1]*float(box[3])))/2)
+        return (x1,y1,x2,y2)
+
+    def convertRegularToYolo(self, size, box):
+        x1 = (box[0] + box[2])/(2 * size[0])
+        x2 = (box[2] - box[0])/size[0]
+        y1 = (box[1] + box[3])/(2 * size[1])
+        y2 = (box[3] - box[1])/size[1]
         return (x1,y1,x2,y2)
 
     def add_person_id(self):
@@ -448,14 +590,15 @@ class LabelTool():
 
     def on_click_listbox(self, event):
         idx = int(self.listbox.curselection()[0])
+        print("You clicked %d listbox item"  % idx)
         self.sel_idx = idx
-        bbox = self.bboxList[idx]
+        bbox = self.bboxes[idx]
 
         self.sel_id = self.listbox.get(idx).split(":")[0]
         self.sel_person_id.set(str(self.sel_id))
-        self.sel_bbox_text.set(str(bbox))
-        self.sel_standing.set(self.standing_vals[self.sel_idx])
-        self.sel_full_body.set(self.full_body_vals[self.sel_idx])
+        self.sel_bbox_val.set(str(bbox))
+        self.standing_val.set(self.standing_vals[self.sel_idx])
+        self.full_body_val.set(self.full_body_vals[self.sel_idx])
 
         self.cropped = self.img.crop( ( bbox[0], bbox[1], bbox[2] , bbox[3] ) )
         self.cropped.thumbnail((200, 200), Image.ANTIALIAS)
@@ -465,24 +608,22 @@ class LabelTool():
         self.thumbnail.create_image(cw, ch, image=self.selected_thumbnail) 
 
     def on_click_update(self, event=None):
-        #if int(self.entryPersonId.get()) in self.bbox_person_ids:
-        #    showerror("Error", "Each entry should have a different person ID")
-        #    return
+        self.bbox_person_ids[self.sel_idx] = int(self.txt_person_id.get())
+        self.sel_id = self.txt_person_id.get()
 
-        self.bbox_person_ids[self.sel_idx] = self.entryPersonId.get()
-        self.sel_id = self.entryPersonId.get()
+        self.full_body_vals[self.sel_idx] = int(self.full_body_val.get())
+        self.standing_vals[self.sel_idx] = int(self.standing_val.get()) 
+        self._save_to_file()
+        print(self.bbox_person_ids)
+        
+        if int(self.sel_id) > 0: 
+            self.save_thumbnail(self.sel_id, self.cropped, self.replace_thmb_val.get())
+        self.load_bounding_boxes(self.labelfilename, self.img_width, self.img_height)
 
-        self.full_body_vals[self.sel_idx] = int(self.sel_full_body.get())
-        self.standing_vals[self.sel_idx] = int(self.sel_standing.get()) 
-
+    def _save_to_file(self):
         with open(self.labelfilename, 'w') as label_file:
             for (pid, bbox, fb, sv) in zip(self.bbox_person_ids, self.yolo_bboxes, self.full_body_vals, self.standing_vals):
-                label_file.write('%s %f %f %f %f %d %d\n' % (str(pid).zfill(3), 
-                    float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3]), 
-                    sv, fb))
-        if int(self.sel_id) > 0: 
-            self.save_thumbnail(self.sel_id, self.cropped, self.sel_replace_thmb.get())
-        self.load_bounding_boxes(self.labelfilename, self.img_width, self.img_height)
+                label_file.write('%s %f %f %f %f %d %d\n' % (str(pid).zfill(3), float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3]), sv, fb))
 
     def save_thumbnail(self, id, image, replace):
         if not exists(self.thumbnails_dir):
@@ -495,14 +636,14 @@ class LabelTool():
         self.display_thumbnails()
 
     def display_thumbnails(self):
-        self.ids_thumbnails = []
+        self.thumbnail_ids = []
         for th in self.egLabels: th.destroy()
         if not exists(self.thumbnails_dir): return
 
-        thumbs = self.get_gallery_items(self.gallery_idx)
+        thumbs = self.get_gallery_items(self.gal_nav_idx)
 
         for idx, f in enumerate(thumbs):            
-            self.egLabels.append(Label(self.egPanel))
+            self.egLabels.append(Label(self.gallery_panel))
             self.egLabels[-1].pack(side = TOP)
 
             p = join(self.thumbnails_dir, f)
@@ -515,8 +656,8 @@ class LabelTool():
             img_t.text((1, 0), pid,(0,0,0))
 
             w, h = im.size
-            self.ids_thumbnails.append(ImageTk.PhotoImage(im))
-            self.egLabels[-1].config(image=self.ids_thumbnails[-1], width=w, height=h)
+            self.thumbnail_ids.append(ImageTk.PhotoImage(im))
+            self.egLabels[-1].config(image=self.thumbnail_ids[-1], width=w, height=h)
     
     def get_gallery_items(self, gal_idx):
         thumbs = [x for x in os.listdir(self.thumbnails_dir) if x != '.DS_Store']
@@ -525,25 +666,25 @@ class LabelTool():
         return thumbs
 
     def on_click_prev_ten(self):
-        if self.gallery_idx == 1:
+        if self.gal_nav_idx == 1:
             return
-        self.gallery_idx -= 1
+        self.gal_nav_idx -= 1
         self.display_thumbnails()
 
     def on_click_next_ten(self):
-        if 10 * self.gallery_idx > self.total:
+        if 10 * self.gal_nav_idx > self.total:
             return
-        self.gallery_idx += 1
+        self.gal_nav_idx += 1
         self.display_thumbnails()
 
     def clear_selection(self):
         self.sel_idx = -1
-        self.sel_standing.set(0)
-        self.sel_full_body.set(0)
-        self.sel_replace_thmb.set(0)
+        self.standing_val.set(0)
+        self.full_body_val.set(0)
+        self.replace_thmb_val.set(0)
         self.sel_person_id.set('')
         self.thumbnail.delete(ALL)
-        self.sel_bbox_text.set('')
+        self.sel_bbox_val.set('')
         self.remaining_unlabeled = 0
         self.yolo_bboxes = []
         self.bbox_person_ids = []
