@@ -207,7 +207,7 @@ class LabelTool():
         self.txt_person_id = Entry(pnl2, width=5, textvariable=self.sel_person_id, vcmd=self.val_only_integer)
         self.txt_person_id.pack(side=LEFT)
         
-        self.standing_val = IntVar()
+        self.standing_val = IntVar(value=1)
         self.chk_is_standing = Checkbutton(self.action_panel, text='Person is standing?', variable=self.standing_val)
         self.chk_is_standing.pack()
 
